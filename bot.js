@@ -1,11 +1,11 @@
 // Essentials
 const Discord = require('discord.js');
 const client = new Discord.Client();
-const token = 'redacted';
+const token = 'MzUzNTA0NDAyODEzNzQ3MjAw.DIzxWQ.lRqA99P5NgfcAttGSLOvmPS-FYg';
 
 // YouTube init
 const ytdl = require('ytdl-core');
-const streamOptions = { seek: 0, volume: 1 };
+var voiceConnection = null;
 var stream = null;
 var dispatcher = null;
 var songQueue = [];
@@ -26,29 +26,26 @@ client.on('message', message => {
   if(message.content.includes('^play https://www.youtube.com/')) {
   	if(message.member.voiceChannel) {
 	  	message.member.voiceChannel.join()
+	  	  .then(connection => {
+	  	  	voiceConnection = connection;
+	  	  })
 	  	    .catch(console.log);
 	} else {
 	  	message.reply('you need to join a channel');
 	}
 
+	// if it's speaking, then enqueue, if not, play from dequeue, or play from message
 	if(message.member.voiceChannel.connection.speaking) {
 		songQueue.push(message);
+	} else if(!songQueue[0]) {
+		playYTvid(message);
 	}
 	console.log(message.member.voiceChannel.connection.speaking);
 
-	if(dispatcher == null) {
-		// Start streaming youtube video
-		stream = ytdl('https:://www.youtube.com/watch?v=' + getYTID(message), { filter: 'audioonly' });
-		dispatcher = message.member.voiceChannel.connection.playStream(stream);
-	}
-
 	// Fires twice??
-	dispatcher.once('end', () => {
+	dispatcher.on('end', () => {
 		if(songQueue[0]) {
-			stream = ytdl('https:://www.youtube.com/watch?v=' + getYTID(songQueue.shift()), { filter: 'audioonly' });
-			dispatcher = message.member.voiceChannel.connection.playStream(stream);
-		} else {
-			message.reply('ending song');
+			playYTvid(songQueue.shift());
 		}
 	});
 
@@ -70,6 +67,12 @@ function getYTID(message) {
 	var pos = message.content.indexOf('=');
   	var ytID = message.content.slice(pos+1, message.content.length);
   	return ytID;
+}
+
+function playYTvid(message) {
+	// Start streaming if not playing
+	stream = ytdl('https:://www.youtube.com/watch?v=' + getYTID(message), { filter: 'audioonly' });
+	dispatcher = message.member.voiceChannel.connection.playStream(stream);
 }
 
 
