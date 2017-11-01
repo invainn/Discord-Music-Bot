@@ -19,7 +19,6 @@ client.on('ready', () => {
 // Create an event listener for messages
 client.on('message', async (message) => {
   if(!message.guild) return;
-  checkBanned(message);
   if(message.content.includes('_')) {
  	ytVid(message);
  	coinFlip(message);
@@ -38,20 +37,65 @@ function guildInit(id) {
 function ytVid(message) {
 	if(message.content.startsWith('_stop')) {
 		stopCommand(message);
-	} else if(message.content.startsWith('_skip')) {
-		skipCommand(message);
+	} else if(message.content.startsWith('_skipto')) {
+		skipToCommand(message.member, message.guild, message.channel, message.content);
 	} else if(message.content.startsWith('_play https://www.youtube.com/')) {
-		playCommand(message, false);
+		playCommand(message.member, message.guild, message.channel, message.content, false);
 	} else if(message.content.startsWith('_vsearch')) {
-		playCommand(message, true);
+		playCommand(message.member, message.guild, message.channel, message.content, true);
 	} else if(message.content.startsWith('_queue')) {
 		queueList(message);
 	} else if(message.content.startsWith('_clear')) {
 		clearQueue(message);
 	} else if(message.content.startsWith('_help')) {
 		helpCommand(message);
+	} else if(message.content.startsWith('_playlist')) {
+		playlistCommand(message.member, message.guild, message.channel, message.content);
+	} else if(message.content.startsWith('_skip')) {
+		skipCommand(message.guild);
 	} else if(message.content.startsWith('_volume')) {
 		volumeCommand(message);
+	}
+}
+
+function skipToCommand(member, guild, channel, content) {
+	if(guilds[guild.id].songs.length > 0) {
+		let pos = content.indexOf(' ');
+		let num = parseInt(content.slice(pos+1, content.length))-1;
+
+		if(num > guilds[guild.id].songs.length-1 || num < 0) {
+			return channel.send('Out of range!');
+		} else {
+			for(var i = 0; i < num; i++) {
+				guilds[guild.id].songs.shift();
+				guilds[guild.id].songlist.shift();
+			}
+
+			skipCommand(guild);
+		}
+	}
+}
+
+async function playlistCommand(member, guild, channel, content) {
+	if(content.includes('https://www.youtube.com/playlist?list=')) {
+		let pos = content.indexOf('=');
+		let playlistID = content.slice(pos+1, content.length);
+
+		const playlist = await youtube.getPlaylistByID(playlistID);
+		const videos = await playlist.getVideos();
+
+		for(const video of Object.values(videos)) {
+			let tempVideo = await youtube.getVideoByID(video.id).then(v => {
+			if(member.voiceChannel.connection) {
+				guilds[guild.id].songs.push(v.id);
+				guilds[guild.id].songlist.push(v.title);
+			} else {
+				let tempContent = 'https://www.youtube.com/watch?v=' + v.id;
+				playCommand(member, guild, channel, tempContent, false);
+			}
+			}).catch(console.log);
+		}
+		channel.send('Added ' + playlist.title + ' playlist to queue!');
 	}
 }
 
@@ -82,13 +126,15 @@ function helpCommand(message) {
 	  .addField('_volume [volume_num]', 'Changes volume of the current song')
 	  .addField('_vsearch [search_string]', 'Searches a song from YT and plays the first result')
 	  .addField('_clear', 'Clears the queue')
-	  .addField('_coinflip', 'Flips a coin');
+	  .addField('_coinflip', 'Flips a coin')
+	  .addField('_playlist [playlist_link]', 'Plays entire playlist')
+	  .addField('_skipto [song_number]', 'Skips to the song in the queue');
 
 	  message.channel.send({embed});
 }
 
 function clearQueue(message) {
-	if(guilds[message.guild.id].songs > 0) {
+	if(guilds[message.guild.id].songs.length > 0) {
 		guilds[message.guild.id].songs.length = 0;
 		guilds[message.guild.id].songlist.length = 0;
 	}
@@ -96,7 +142,7 @@ function clearQueue(message) {
 
 function queueList(message) {
 	let builtString = '';
-	if(guilds[message.guild.id].songlist.length > 0) {
+	if(guilds[message.guild.id].songlist.length) {
 		guilds[message.guild.id].songlist.forEach((song, i) => {
 			builtString += ((i+1)+'. '+song+'\n');
 		});
@@ -115,7 +161,6 @@ function queueList(message) {
 	}
 }
 
-// need to implement fully
 function volumeCommand(message) {
 	if(message.member.voiceChannel.connection) {
 		var pos = message.content.indexOf(' ');
@@ -137,100 +182,100 @@ function stopCommand(message) {
 		guilds[message.guild.id].isSpeaking = false;
 		clearQueue(message);
 	} else {
-		message.reply('not in a channel');
+		message.reply('I\'m not in the channel');
 	}
 }
 
-function skipCommand(message) {
-	if(guilds[message.guild.id].dispatcher) {
-		guilds[message.guild.id].dispatcher.end();
+function skipCommand(guild) {
+	if(guilds[guild.id].dispatcher) {
+		guilds[guild.id].dispatcher.end();
 	}
 }
 
-async function playCommand(message, isSearch) {
-  	if(message.member.voiceChannel) {
+async function playCommand(member, guild, channel, content, isSearch) {
+  	if(member.voiceChannel) {
   		
-	  	message.member.voiceChannel.join().then(connection => connection).catch(console.log);
+	  	member.voiceChannel.join().then(connection => connection).catch(console.log);
 
-	  	if(guilds[message.guild.id] === undefined) {
-	  		guildInit(message.guild.id);
+	  	if(guilds[guild.id] === undefined) {
+	  		guildInit(guild.id);
 	  	}
 
 	  	// vsearch
 	  	if(isSearch) {
-		  	let pos = message.content.indexOf(' ');
-		  	let searchString = message.content.slice(pos+1, message.content.length);
+		  	let pos = content.indexOf(' ');
+		  	let searchString = content.slice(pos+1, content.length);
 		  	try {
 		  		let videos = await youtube.searchVideos(searchString, 1);
-		  		message.content = videos[0].url;
+		  		content = videos[0].url;
 		  	} catch (e) {
-		  		return message.channel.send('Unable to find video\n' + e);
+		  		return channel.send('Unable to find video\n' + e);
 		  	}
 	  	}
 
-	  	guilds[message.guild.id].songs.push(message);
+	  	guilds[guild.id].songs.push(getYTID(content));
 
-	  	if(!guilds[message.guild.id].isSpeaking) {
-	  		guilds[message.guild.id].isSpeaking = true;
-	  		playYTvid(guilds[message.guild.id].songs.shift());
+	  	if(!guilds[guild.id].isSpeaking) {
+	  		guilds[guild.id].isSpeaking = true;
+	  		playYTvid(member, guild, channel, content, guilds[guild.id].songs.shift());
 	  	} else {
 	  		try {
-	  			let video = await youtube.getVideoByID(getYTID(message))
+	  			let video = await youtube.getVideoByID(getYTID(content))
 	  				.then(v => {
-	  					message.channel.send('Added ' + v.title + ' to queue');
-	  					guilds[message.guild.id].songlist.push(v.title);
+	  					channel.send('Added ' + v.title + ' to queue');
+	  					guilds[guild.id].songlist.push(v.title);
 	  				})
 	  				.catch(console.log);
 	  		} catch (e) {
 	  			console.log('Could not grab title\n' + e);
-	  			message.channel.send('Unable to get title');
+	  			channel.send('Unable to get title');
 
 	  		}
 	  	}
 	} else {
-	  	message.reply('join a channel');
+	  	channel.send('Join a channel');
 	}
 }
 
-function getYTID(message) {
-	var pos = message.content.indexOf('=');
-  	var ytID = message.content.slice(pos+1, pos+12); // yt id is 11 chars
+function getYTID(content) {
+	var pos = content.indexOf('=');
+  	var ytID = content.slice(pos+1, pos+12); // yt id is 11 chars
   	return ytID;
 }
 
-async function playYTvid(message) {
+async function playYTvid(member, guild, channel, content, videoID) {
 	// Start streaming if not playing
-	guilds[message.guild.id].stream = ytdl('https://www.youtube.com/watch?v=' + getYTID(message), { filter: 'audioonly' });
-	guilds[message.guild.id].dispatcher = message.member.voiceChannel.connection.playStream(guilds[message.guild.id].stream);
-	guilds[message.guild.id].songlist.shift();
+	guilds[guild.id].stream = ytdl('https://www.youtube.com/watch?v=' + videoID, { filter: 'audioonly' });
+	guilds[guild.id].dispatcher = member.voiceChannel.connection.playStream(guilds[guild.id].stream);
+	guilds[guild.id].songlist.shift();
 
 	try {
-		var video = await youtube.getVideo('https://www.youtube.com/watch?v=' + getYTID(message))
+		var video = await youtube.getVideo('https://www.youtube.com/watch?v=' + videoID)
 			.then(v => {
-				channelVideoMessage(message, v);
+				channelVideoMessage(channel, v);
 			})
 			.catch(console.log);
 	} catch (e) {
-		message.channel.send('Unable to get video title');
+		channel.send('Unable to get video title');
 		console.log(e);
 	}
 
 	// it works but it's not pretty
-	guilds[message.guild.id].dispatcher.setMaxListeners(1);
+	guilds[guild.id].dispatcher.setMaxListeners(1);
 
-	guilds[message.guild.id].dispatcher.on('end', () => {
-		if(guilds[message.guild.id].isSpeaking && (guilds[message.guild.id].songs.length > 0)) {
+	guilds[guild.id].dispatcher.on('end', () => {
+		if(guilds[guild.id].isSpeaking && (guilds[guild.id].songs.length > 0)) {
 			setTimeout(function() {
-				playYTvid(guilds[message.guild.id].songs.shift());
+				playYTvid(member, guild, channel, content, guilds[guild.id].songs.shift());
 			}, 100);
 		} else {
-			message.member.voiceChannel.connection.disconnect();
-			guilds[message.guild.id].isSpeaking = false;
+			member.voiceChannel.connection.disconnect();
+			guilds[guild.id].isSpeaking = false;
 		}
 	});
 }
 
-function channelVideoMessage(message, video) {
+function channelVideoMessage(channel, video) {
 	let description;
 
 	// description cannot exceed 2048 characters
@@ -244,8 +289,8 @@ function channelVideoMessage(message, video) {
 	  .setTimestamp()
 	  .setURL(video.url);
 
-	  message.channel.send('Playing');
-	  message.channel.send({embed});
+	  channel.send('Playing');
+	  channel.send({embed});
 }
 
 // Login
