@@ -19,7 +19,6 @@ client.on('ready', () => {
 // Create an event listener for messages
 client.on('message', async (message) => {
   if(!message.guild) return;
-  checkBanned(message);
   if(message.content.includes('_')) {
  	ytVid(message);
  	coinFlip(message);
