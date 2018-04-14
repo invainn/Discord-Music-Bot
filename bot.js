@@ -1,19 +1,20 @@
 // Essentials
-const Discord = require('discord.js');
-const ytdl = require('ytdl-core');
-const YT = require('simple-youtube-api');
+import Discord from 'discord.js';
+import ytdl from 'ytdl-core';
+import YT from 'simple-youtube-api';
+import config from './config';
 
 // Discord client
 const client = new Discord.Client();
-const youtube = new YT(process.env.YT_API);
-const token = process.env.TOKEN;
+const youtube = new YT(process.env.YT_API || config.YT_API);
+const token = process.env.TOKEN || config.DISCORD_TOKEN;
 
 // Global variables
-var guilds = {};
+let guilds = {};
 
 // Ready callback
 client.on('ready', () => {
-  console.log('I am ready!');
+	console.log('bot started');
 });
 
 // Create an event listener for messages
@@ -66,7 +67,7 @@ function skipToCommand(member, guild, channel, content) {
 		if(num > guilds[guild.id].songs.length-1 || num < 0) {
 			return channel.send('Out of range!');
 		} else {
-			for(var i = 0; i < num; i++) {
+			for(let i = 0; i < num; i++) {
 				guilds[guild.id].songs.shift();
 				guilds[guild.id].songlist.shift();
 			}
@@ -163,8 +164,8 @@ function queueList(message) {
 
 function volumeCommand(message) {
 	if(message.member.voiceChannel.connection) {
-		var pos = message.content.indexOf(' ');
-		var volume = parseFloat(message.content.slice(pos+1, message.content.length));
+		let pos = message.content.indexOf(' ');
+		let volume = parseFloat(message.content.slice(pos+1, message.content.length));
 
 		if(volume > 100 || volume < 0) {
 			message.reply('volume out of range!');
@@ -195,7 +196,12 @@ function skipCommand(guild) {
 async function playCommand(member, guild, channel, content, isSearch) {
   	if(member.voiceChannel) {
   		
-	  	member.voiceChannel.join().then(connection => connection).catch(console.log);
+		member.voiceChannel.join().then(connection => connection).catch(console.log);
+		try {
+			let connection = member.voiceChannel.join();
+		} catch(e) {
+			console.log(e);
+		}
 
 	  	if(guilds[guild.id] === undefined) {
 	  		guildInit(guild.id);
@@ -220,12 +226,9 @@ async function playCommand(member, guild, channel, content, isSearch) {
 	  		playYTvid(member, guild, channel, content, guilds[guild.id].songs.shift());
 	  	} else {
 	  		try {
-	  			let video = await youtube.getVideoByID(getYTID(content))
-	  				.then(v => {
-	  					channel.send('Added ' + v.title + ' to queue');
-	  					guilds[guild.id].songlist.push(v.title);
-	  				})
-	  				.catch(console.log);
+				let video = await youtube.getVideoByID(getYTID(content));
+				channel.send(`Added ${v.title} to queue`);
+				guilds[guild.id].songlist.push(v.title);
 	  		} catch (e) {
 	  			console.log('Could not grab title\n' + e);
 	  			channel.send('Unable to get title');
@@ -238,8 +241,8 @@ async function playCommand(member, guild, channel, content, isSearch) {
 }
 
 function getYTID(content) {
-	var pos = content.indexOf('=');
-  	var ytID = content.slice(pos+1, pos+12); // yt id is 11 chars
+	let pos = content.indexOf('=');
+  	let ytID = content.slice(pos+1, pos+12); // yt id is 11 chars
   	return ytID;
 }
 
@@ -250,11 +253,8 @@ async function playYTvid(member, guild, channel, content, videoID) {
 	guilds[guild.id].songlist.shift();
 
 	try {
-		var video = await youtube.getVideo('https://www.youtube.com/watch?v=' + videoID)
-			.then(v => {
-				channelVideoMessage(channel, v);
-			})
-			.catch(console.log);
+		let video = await youtube.getVideo(`https://www.youtube.com/watch?v=${videoID}`);
+		chanellVideoMessage(channel, video);
 	} catch (e) {
 		channel.send('Unable to get video title');
 		console.log(e);
