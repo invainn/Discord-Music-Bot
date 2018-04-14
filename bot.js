@@ -1,13 +1,12 @@
 // Essentials
-import Discord from 'discord.js';
-import ytdl from 'ytdl-core';
-import YT from 'simple-youtube-api';
-import config from './config';
+const Discord = require('discord.js');
+const ytdl = require('ytdl-core');
+const YT = require('simple-youtube-api');
 
 // Discord client
 const client = new Discord.Client();
-const youtube = new YT(process.env.YT_API || config.YT_API);
-const token = process.env.TOKEN || config.DISCORD_TOKEN;
+const youtube = new YT(process.env.YT_API || require('./config').YT_KEY);
+const token = process.env.TOKEN || require('./config').DISCORD_TOKEN;
 
 // Global variables
 let guilds = {};
@@ -18,7 +17,7 @@ client.on('ready', () => {
 });
 
 // Create an event listener for messages
-client.on('message', async (message) => {
+client.on('message', (message) => {
   if(!message.guild) return;
   if(message.content.includes('_')) {
  	ytVid(message);
@@ -86,15 +85,18 @@ async function playlistCommand(member, guild, channel, content) {
 		const videos = await playlist.getVideos();
 
 		for(const video of Object.values(videos)) {
-			let tempVideo = await youtube.getVideoByID(video.id).then(v => {
-			if(member.voiceChannel.connection) {
-				guilds[guild.id].songs.push(v.id);
-				guilds[guild.id].songlist.push(v.title);
-			} else {
-				let tempContent = 'https://www.youtube.com/watch?v=' + v.id;
-				playCommand(member, guild, channel, tempContent, false);
+			try {
+				let tempVideo = await youtube.getVideoByID(video.id);
+				if(member.voiceChannel.connection) {
+					guilds[guild.id].songs.push(tempVideo.id);
+					guilds[guild.id].songlist.push(tempVideo.title);
+				} else {
+					let tempContent = `https://www.youtube.com/watch?v=`;
+					playCommand(member, guild, channel, tempContent, false);
+				}
+			} catch(e) {
+				console.log(e);
 			}
-			}).catch(console.log);
 		}
 		channel.send('Added ' + playlist.title + ' playlist to queue!');
 	}
@@ -195,8 +197,6 @@ function skipCommand(guild) {
 
 async function playCommand(member, guild, channel, content, isSearch) {
   	if(member.voiceChannel) {
-  		
-		member.voiceChannel.join().then(connection => connection).catch(console.log);
 		try {
 			let connection = member.voiceChannel.join();
 		} catch(e) {
@@ -223,12 +223,12 @@ async function playCommand(member, guild, channel, content, isSearch) {
 
 	  	if(!guilds[guild.id].isSpeaking) {
 	  		guilds[guild.id].isSpeaking = true;
-	  		playYTvid(member, guild, channel, content, guilds[guild.id].songs.shift());
+	  		await playYTvid(member, guild, channel, content, guilds[guild.id].songs.shift());
 	  	} else {
 	  		try {
 				let video = await youtube.getVideoByID(getYTID(content));
-				channel.send(`Added ${v.title} to queue`);
-				guilds[guild.id].songlist.push(v.title);
+				channel.send(`Added ${video.title} to queue`);
+				guilds[guild.id].songlist.push(video.title);
 	  		} catch (e) {
 	  			console.log('Could not grab title\n' + e);
 	  			channel.send('Unable to get title');
@@ -248,13 +248,13 @@ function getYTID(content) {
 
 async function playYTvid(member, guild, channel, content, videoID) {
 	// Start streaming if not playing
-	guilds[guild.id].stream = ytdl('https://www.youtube.com/watch?v=' + videoID, { filter: 'audioonly' });
+	guilds[guild.id].stream = ytdl(`https://www.youtube.com/watch?v=${videoID}`, { filter: 'audioonly' });
 	guilds[guild.id].dispatcher = member.voiceChannel.connection.playStream(guilds[guild.id].stream);
 	guilds[guild.id].songlist.shift();
 
 	try {
 		let video = await youtube.getVideo(`https://www.youtube.com/watch?v=${videoID}`);
-		chanellVideoMessage(channel, video);
+		channelVideoMessage(channel, video);
 	} catch (e) {
 		channel.send('Unable to get video title');
 		console.log(e);
@@ -266,7 +266,7 @@ async function playYTvid(member, guild, channel, content, videoID) {
 	guilds[guild.id].dispatcher.on('end', () => {
 		if(guilds[guild.id].isSpeaking && (guilds[guild.id].songs.length > 0)) {
 			setTimeout(function() {
-				playYTvid(member, guild, channel, content, guilds[guild.id].songs.shift());
+				playYTvid(member, guild, channel, content, guilds[guild.id].songs.shift())
 			}, 100);
 		} else {
 			member.voiceChannel.connection.disconnect();
@@ -279,7 +279,7 @@ function channelVideoMessage(channel, video) {
 	let description;
 
 	// description cannot exceed 2048 characters
-	if(video.description.length > 512) description = video.description.substring(0, 511);
+	if(video.description.length > 512) description = `${video.description.substring(0, 507)}...`;
 
 	const embed = new Discord.RichEmbed()
 	  .setAuthor(video.title, video.maxRes.url)
